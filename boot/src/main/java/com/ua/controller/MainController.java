@@ -6,6 +6,10 @@ import com.ua.repository.MessageRepository;
 import com.ua.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -36,26 +40,29 @@ public class MainController {
   private String uploadPath;
 
   @GetMapping("/")
-  public String greeting(){
+  public String greeting() {
     return "greeting";
   }
 
   @GetMapping("/login")
-  public String login(){
+  public String login() {
     return "login";
   }
 
   @GetMapping("/main")
   public String welcome(@AuthenticationPrincipal User user,
-                        @RequestParam(required = false, defaultValue = "") String filter ,Model model) {
-    List<Message> list = null;
+                        @RequestParam(required = false, defaultValue = "") String filter,
+                        @PageableDefault(sort = {"id"}, direction = Sort.Direction.DESC) Pageable pageable,
+                        Model model) {
+    Page<Message> list = null;
 
-    if("all".equals(filter) || "*".equals(filter) || filter==null || "".equals(filter))
-      list =  messageRepository.findAll();
-    else if(!filter.isEmpty())
-      list = messageRepository.findByTag(filter);
+    if ("all".equals(filter) || "*".equals(filter) || filter == null || "".equals(filter))
+      list = messageRepository.findAll(pageable);
+    else if (!filter.isEmpty())
+      list = messageRepository.findByTag(filter, pageable);
 
-    model.addAttribute("messages", list);
+    model.addAttribute("page", list);
+    model.addAttribute("url", "/main");
     model.addAttribute("filter", filter);
     return "main";
   }
@@ -65,15 +72,16 @@ public class MainController {
                     @Valid Message message,
                     BindingResult bindingResult,
                     Model model,
+                    @PageableDefault(sort = {"id"}, direction = Sort.Direction.DESC) Pageable pageable,
                     @RequestParam("image") MultipartFile file) throws IOException {
 
-    if(bindingResult.hasErrors()){
+    if (bindingResult.hasErrors()) {
       Map<String, String> errors = ControllerUtils.getErrors(bindingResult);
       model.mergeAttributes(errors);
       model.addAttribute("message", message);
     } else {
 
-      if(file!=null && !file.getOriginalFilename().isEmpty())
+      if (file != null && !file.getOriginalFilename().isEmpty())
         message.setFile(Base64.getEncoder().encodeToString(file.getBytes()));
 
       message.setUser(user);
@@ -81,8 +89,8 @@ public class MainController {
 
       messageRepository.save(message);
     }
-
-    model.addAttribute("messages", messageRepository.findAll());
+    model.addAttribute("url", "/main");
+    model.addAttribute("page", messageRepository.findAll(pageable));
     return "main";
   }
 
@@ -92,13 +100,13 @@ public class MainController {
     @PathVariable User user,
     Model model,
     @RequestParam(required = false) Message mes
-  ){
+  ) {
 
     List<Message> messages = user.getMessages();
     model.addAttribute("userChannel", user);
     model.addAttribute("subscriptionsCount", user.getSubscriptions().size());
     model.addAttribute("subscribersCount", user.getSubscribers().size());
-    model.addAttribute("isSubscribe", user.getSubscribers().stream().anyMatch(e->e.getUsername().equals(currentUser.getUsername())));
+    model.addAttribute("isSubscribe", user.getSubscribers().stream().anyMatch(e -> e.getUsername().equals(currentUser.getUsername())));
     model.addAttribute("messages", messages);
     model.addAttribute("message", mes);
     model.addAttribute("isCurrentUser", user.getUsername().equals(currentUser.getUsername()));
@@ -115,16 +123,16 @@ public class MainController {
     @RequestParam("image") MultipartFile file
   ) throws IOException {
 
-    if(message.getUser().getUsername().equals(currentUser.getUsername())){
-      if(!StringUtils.isEmpty(text)){
+    if (message.getUser().getUsername().equals(currentUser.getUsername())) {
+      if (!StringUtils.isEmpty(text)) {
         message.setText(text);
       }
 
-      if(!StringUtils.isEmpty(tag)){
+      if (!StringUtils.isEmpty(tag)) {
         message.setTag(tag);
       }
 
-      if(file!=null && !file.getOriginalFilename().isEmpty()){
+      if (file != null && !file.getOriginalFilename().isEmpty()) {
         message.setFile(Base64.getEncoder().encodeToString(file.getBytes()));
       }
 
@@ -132,7 +140,7 @@ public class MainController {
     }
 
 
-    return "redirect:/user-messages/"+user;
+    return "redirect:/user-messages/" + user;
   }
 
 
@@ -140,7 +148,7 @@ public class MainController {
   public String subscribe(
     @PathVariable User user,
     @AuthenticationPrincipal User currentUser
-  ){
+  ) {
     userService.subscribe(currentUser, user);
     return "redirect:/user-messages/" + user.getId();
   }
@@ -149,17 +157,17 @@ public class MainController {
   public String unsubscribe(
     @PathVariable User user,
     @AuthenticationPrincipal User currentUser
-  ){
+  ) {
     userService.unsubscribe(currentUser, user);
     return "redirect:/user-messages/" + user.getId();
   }
 
   @GetMapping("/user/{type}/{user}/list")
-  public String userList(Model model, @PathVariable User user, @PathVariable String type){
+  public String userList(Model model, @PathVariable User user, @PathVariable String type) {
     model.addAttribute("userChannel", user);
     model.addAttribute("type", type);
 
-    if("subscriptions".equals(type)){
+    if ("subscriptions".equals(type)) {
       model.addAttribute("users", user.getSubscriptions());
     } else {
       model.addAttribute("users", user.getSubscribers());
